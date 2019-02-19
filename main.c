@@ -59,6 +59,7 @@ char *keyword_var;
 char *keyword_if;
 char *keyword_else;
 char *keyword_print;
+char *keyword_while;
 
 void init_keywords() {
 #define KEYWORD(s) keyword_##s = intern_string(#s)
@@ -66,6 +67,7 @@ void init_keywords() {
 	KEYWORD(if);
 	KEYWORD(else);
 	KEYWORD(print);
+	KEYWORD(while);
 #undef KEYWORD
 }
 
@@ -472,6 +474,19 @@ void parse_stmt_assign() {
 }
 
 
+void parse_stmt_while() {
+	int compare_index = buf_len(code);
+	parse_expr();
+	buf_push(code, JEZ);
+	int else_jmp_patch_index = buf_len(code);
+	buf_push(code, NOP);
+	parse_stmt();
+	buf_push(code, JMP);
+	buf_push(code, compare_index - buf_len(code));
+	code[else_jmp_patch_index] = buf_len(code) - else_jmp_patch_index;
+}
+
+
 void parse_stmt_print() {
 	parse_expr();
 	buf_push(code, PRINT);
@@ -511,6 +526,8 @@ void parse_stmt() {
 		parse_stmt_if();
 	} else if (match_keyword(keyword_print)) {
 		parse_stmt_print();
+	} else if (match_keyword(keyword_while)) {
+		parse_stmt_while();
 	} else if (is_token(TOKEN_NAME)) {
 		parse_stmt_assign();
 	} else if (match_token('{')) {
@@ -756,7 +773,7 @@ int main(int argc, char **argv) {
 	lex_test();
 	intern_test();
 	char* source;
-	if (load_file("C:\\Users\\JoshPC\\projects\\Random_Projects\\stak\\TextFile1.txt", &source) < 0) {
+	if (load_file("C:\\Users\\JoshPC\\projects\\Random_Projects\\stak\\test.stak", &source) < 0) {
 		fatal("Could not load code");
 	}
 	compile(source);
