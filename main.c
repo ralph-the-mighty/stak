@@ -72,12 +72,77 @@ void init_keywords() {
 }
 
 typedef enum TokenKind {
-	TOKEN_KIND_LAST_CHAR = 127,
 	TOKEN_INT,
 	TOKEN_NAME,
+
+
+
+	//mul associativity
+	TOKEN_FIRST_MUL,
+	TOKEN_MUL = TOKEN_FIRST_MUL,
+	TOKEN_DIV,
+	TOKEN_MOD,
+	TOKEN_AND,
+	TOKEN_LAST_MUL = TOKEN_AND,
+
+
+	//add associativity
+	TOKEN_FIRST_ADD,
+	TOKEN_PLUS = TOKEN_FIRST_ADD,
+	TOKEN_MINUS,
+	TOKEN_OR,
+	TOKEN_XOR,
+	TOKEN_LAST_ADD = TOKEN_XOR,
+
+	//cmp associativity
+	TOKEN_FIRST_CMP,
+	TOKEN_LT = TOKEN_FIRST_CMP,
+	TOKEN_GT,
+	TOKEN_LTE,
+	TOKEN_GTE,
+	TOKEN_EQ,
+	TOKEN_NEQ,
+	TOKEN_LAST_CMP = TOKEN_NEQ,
+
+	TOKEN_OR_OR,
+	TOKEN_AND_AND,
+	TOKEN_ASSIGN,
+	TOKEN_NOT,
+	TOKEN_BIT_NOT,
+
+	//grouping tokens
+	TOKEN_LPAREN,
+	TOKEN_RPAREN,
+	TOKEN_LBRACE,
+	TOKEN_RBRACE,
+	
 	TOKEN_EOF,
-	TOKEN_KIND_SIZE
 } TokenKind;
+
+
+const char* token_string_map[] = {
+	[TOKEN_INT] = "int",
+	[TOKEN_NAME] = "name",
+	[TOKEN_PLUS] = "+",
+	[TOKEN_MINUS] = "-",
+	[TOKEN_MUL] = "*",
+	[TOKEN_DIV] = "/",
+	[TOKEN_MOD] = "%",
+	[TOKEN_NOT] = "!",
+	[TOKEN_LT] = "<",
+	[TOKEN_GT] = ">",
+	[TOKEN_LTE] = "<=",
+	[TOKEN_GTE] = ">=",
+	[TOKEN_EQ] = "==",
+	[TOKEN_NEQ] = "!=",
+	[TOKEN_ASSIGN] = "=",
+	[TOKEN_LPAREN] = "(",
+	[TOKEN_RPAREN] = ")",
+	[TOKEN_LBRACE] = "{",
+	[TOKEN_RBRACE] = "}",
+	[TOKEN_EOF] = "EOF",
+};
+
 
 
 typedef struct Token {
@@ -138,15 +203,7 @@ size_t copy_token_kind_str(char* dest, size_t dest_size, TokenKind kind) {
 
 
 const char *token_kind_str(TokenKind kind) {
-	static char buf[256];
-	if (kind <= TOKEN_KIND_LAST_CHAR) {
-		buf[0] = kind;
-		buf[1] = 0;
-	} else {
-		size_t n = copy_token_kind_str(buf, sizeof(buf), kind);
-		assert(n + 1 <= sizeof(buf));
-	}
-	return buf;
+	return token_string_map[kind];
 }
 
 
@@ -210,6 +267,17 @@ int scan_int() {
 	return val;
 }
 
+#define CASE1(x, k) case x: token.kind = k; \
+						stream++;           \
+						break;              
+#define CASE2(x1, k1, x2, k2) case x1:           \
+						if(*++stream == x2) {    \
+							token.kind = k2;     \
+							stream++;            \
+						} else {                 \
+							token.kind = k1;     \
+						}						 \
+						break;
 
 
 void next_token() {
@@ -249,6 +317,24 @@ void next_token() {
 		token.stringval = intern_string_range(start, end);
 	} break;
 
+	CASE1('+', TOKEN_PLUS)
+	CASE1('-', TOKEN_MINUS)
+	CASE1('*', TOKEN_MUL)
+	CASE1('/', TOKEN_DIV)
+	CASE1('%', TOKEN_MOD)
+	CASE1('^', TOKEN_XOR)
+	CASE1('~', TOKEN_BIT_NOT)
+	CASE2('!', TOKEN_NOT, '=', TOKEN_NEQ)
+	CASE2('<', TOKEN_LT, '=', TOKEN_LTE)
+	CASE2('>', TOKEN_GT, '=', TOKEN_GTE)
+	CASE2('=', TOKEN_ASSIGN, '=', TOKEN_EQ)
+	CASE2('&', TOKEN_AND, '&', TOKEN_AND_AND)
+	CASE2('|', TOKEN_OR, '|', TOKEN_OR_OR)
+	CASE1('(', TOKEN_LPAREN)
+	CASE1(')', TOKEN_RPAREN)
+	CASE1('{', TOKEN_LBRACE)
+	CASE1('}', TOKEN_RBRACE)
+			   
 	case 0:
 	{
 		token.kind = TOKEN_EOF;
@@ -261,20 +347,11 @@ void next_token() {
 	}
 }
 
+#undef CASE1
+#undef CASE2
 
-void buf_test() {
-	int *buf = NULL;
-	for (int i = 0; i < 100; i++) {
-		buf_push(buf, i);
-	}
-	buf_free(buf);
 
-	char *buf2 = NULL;
-	for (int i = 0; i < 100; i++) {
-		buf_push(buf2, '0' + i);
-	}
-	buf_free(buf2);
-}
+
 
 void expect_token(TokenKind kind) {
 	if (token.kind == kind) {
@@ -318,6 +395,21 @@ bool match_keyword(char*keyword) {
 	}
 }
 
+bool is_add_token(TokenKind kind) {
+	return (kind >= TOKEN_FIRST_ADD) && (kind <= TOKEN_LAST_ADD);
+}
+
+bool is_mul_token(TokenKind kind) {
+	return (kind >= TOKEN_FIRST_MUL) && (kind <= TOKEN_LAST_MUL);
+}
+
+bool is_cmp_token(TokenKind kind) {
+	return (kind >= TOKEN_FIRST_CMP) && (kind <= TOKEN_LAST_CMP);
+}
+
+
+
+
 
 #define assert_token(x) (assert(token.kind == (x)));
 #define assert_keyword(kw) (assert(token.kind == TOKEN_NAME && token.stringval == (kw)));
@@ -352,8 +444,22 @@ typedef enum OpCode {
 	SUB,
 	MUL,
 	DIV,
+	MOD,
 	NEG,
 	LIT,
+	LT,
+	LTE,
+	GT,
+	GTE,
+	EQ,
+	NEQ,
+	BIT_AND,
+	BIT_OR,
+	BIT_NEG,
+	BIT_XOR,
+	BOOL_AND,
+	BOOL_OR,
+	BOOL_NOT,
 	JEZ,
 	JMP,
 	LOAD,
@@ -382,19 +488,21 @@ void parse_expr4() {
 		buf_push(code, LOAD);
 		buf_push(code, lookup_var(token.stringval));
 		next_token();
-	} else if (is_token('(')) {
+	} else if (is_token(TOKEN_LPAREN)) {
 		next_token();
 		parse_expr();
-		expect_token(')');
+		expect_token(TOKEN_RPAREN);
 	}
 }
 
 
-void parse_expr3() {
-	if (is_token('-')) {
-		next_token();
+void parse_expr_unary() {
+	if (match_token(TOKEN_MINUS)) {
 		parse_expr4();
 		buf_push(code, NEG);
+	} else if (match_token(TOKEN_NOT)) {
+		parse_expr4();
+		buf_push(code, BOOL_NOT);
 	} else {
 		parse_expr4();
 	}
@@ -402,41 +510,112 @@ void parse_expr3() {
 
 
 
-void parse_expr2() {
-	parse_expr3();
-	while (is_token('*') || is_token('/')) {
+void parse_expr_mul() {
+	parse_expr_unary();
+	while (is_mul_token(token.kind)) {
 		TokenKind op = token.kind;
 		next_token();
-		if (op == '*') {
-			parse_expr2();
-			buf_push(code, MUL);
-		} else {
-			parse_expr2();
-			buf_push(code, DIV);
+		parse_expr_unary();
+		switch (op) {
+			case TOKEN_MUL:
+				buf_push(code, MUL);
+				break;
+			case TOKEN_DIV:
+				buf_push(code, DIV);
+				break;
+			case TOKEN_MOD:
+				buf_push(code, MOD);
+				break;
+			case TOKEN_AND:
+				buf_push(code, BIT_AND);
+				break;
+			default:
+				assert(0);
+				break;
 		}
 	}
 }
 
 
 
-void parse_expr1() {
-	parse_expr2();
-	while (is_token('+') || is_token('-')) {
+void parse_expr_add() {
+	parse_expr_mul();
+	while (is_add_token(token.kind)) {
 		TokenKind op = token.kind;
 		next_token();
-		if (op == '+') {
-			parse_expr2();
+		parse_expr_mul();
+		switch (op) {
+		case TOKEN_PLUS:
 			buf_push(code, ADD);
-		} else {
-			parse_expr2();
+			break;
+		case TOKEN_MINUS:
 			buf_push(code, SUB);
+			break;
+		case TOKEN_OR:
+			buf_push(code, BIT_OR);
+			break;
+		case TOKEN_XOR:
+			buf_push(code, BIT_XOR);
+			break;
+		default:
+			assert(0);
+			break;
 		}
+	}
+}
+
+void parse_expr_cmp() {
+	parse_expr_add();
+	while (is_cmp_token(token.kind)) {
+		TokenKind op = token.kind;
+		next_token();
+		parse_expr_add();
+		switch (op) {
+		case TOKEN_LT:
+			buf_push(code, LT);
+			break;
+		case TOKEN_LTE:
+			buf_push(code, LTE);
+			break;
+		case TOKEN_GT:
+			buf_push(code, GT);
+			break;
+		case TOKEN_GTE:
+			buf_push(code, GTE);
+			break;
+		case TOKEN_EQ:
+			buf_push(code, EQ);
+			break;
+		case TOKEN_NEQ:
+			buf_push(code, NEQ);
+			break;
+		default:
+			assert(0);
+			break;
+		}
+	}
+}
+
+
+void parse_expr_and() {
+	parse_expr_cmp();
+	while (match_token(TOKEN_AND_AND)) {
+		parse_expr_cmp();
+		buf_push(code, BOOL_AND);
+	}
+}
+
+void parse_expr_or() {
+	parse_expr_and();
+	while (match_token(TOKEN_OR_OR)) {
+		parse_expr_and();
+		buf_push(code, BOOL_OR);
 	}
 }
 
 
 void parse_expr() {
-	parse_expr1();
+	parse_expr_or();
 }
 
 
@@ -467,7 +646,7 @@ void parse_stmt_assign() {
 	assert_token(TOKEN_NAME);
 	char* varname = token.stringval;
 	next_token();
-	expect_token('=');
+	expect_token(TOKEN_ASSIGN);
 	parse_expr();
 	buf_push(code, STORE);
 	buf_push(code, lookup_var(varname));
@@ -514,10 +693,10 @@ void parse_stmt_if() {
 
 void parse_stmt_block() {
 	parse_decls();
-	while (!is_token(TOKEN_EOF) && !is_token('}')) {
+	while (!is_token(TOKEN_EOF) && !is_token(TOKEN_RBRACE)) {
 		parse_stmt();
 	}
-	expect_token('}');
+	expect_token(TOKEN_RBRACE);
 }
 
 
@@ -530,7 +709,7 @@ void parse_stmt() {
 		parse_stmt_while();
 	} else if (is_token(TOKEN_NAME)) {
 		parse_stmt_assign();
-	} else if (match_token('{')) {
+	} else if (match_token(TOKEN_LBRACE)) {
 		parse_stmt_block();
 	} else {
 		assert(0);
@@ -560,10 +739,15 @@ void compile(char* string) {
 
 
 
-
-char* disassemble(int* code_buf) {
-	char *output = NULL;
-	for (OpCode* it = code_buf; it < buf_end(code_buf); it++) {
+#define CASE(x) case x: \
+					buf_printf(output, #x); \
+					buf_printf(output, "\n"); \
+					break;
+#define CASE_OP(x) case x: \
+					buf_printf(output, #x); \
+					buf_printf(output, " %d\n", *(++it)); \
+					break;
+/*
 		switch (*it) {
 		case ADD:
 			buf_printf(output, "ADD\n");
@@ -603,7 +787,39 @@ char* disassemble(int* code_buf) {
 			break;
 		case NOP:
 			buf_printf(output, "NOP\n");
-			break;
+			break;*/
+
+char* disassemble(int* code_buf) {
+	char *output = NULL;
+	for (OpCode* it = code_buf; it < buf_end(code_buf); it++) {
+		switch (*it) {
+			CASE(ADD)
+			CASE(SUB)
+			CASE(MUL)
+			CASE(DIV)
+			CASE(NEG)
+			CASE(MOD)
+			CASE(BIT_NEG)
+			CASE(BIT_AND)
+			CASE(BIT_OR)
+			CASE(BIT_XOR)
+			CASE(BOOL_NOT)
+			CASE(BOOL_OR)
+			CASE(BOOL_AND)
+			CASE(LT)
+			CASE(LTE)
+			CASE(GT)
+			CASE(GTE)
+			CASE(EQ)
+			CASE(NEQ)
+			CASE_OP(JEZ)
+			CASE_OP(JMP)
+			CASE_OP(LIT)
+			CASE_OP(LOAD)
+			CASE_OP(STORE)
+			CASE(PRINT)
+			CASE(HALT)
+
 		default:
 			fatal("attempted to disassemble non-esistent opcode %d", *it);
 			break;
@@ -612,6 +828,8 @@ char* disassemble(int* code_buf) {
 	return output;
 }
 
+#undef CASE
+#undef CASE_OP
 
 
 
@@ -636,6 +854,7 @@ void vm_exec(const int *code) {
 	for (;;) {
 		int32_t op = *code++;
 		switch (op) {
+		//arithmetic
 		case ADD: {
 			POPS(2);
 			int32_t right = POP();
@@ -669,12 +888,126 @@ void vm_exec(const int *code) {
 			break;
 		}
 		case NEG: {
-			POPS(2);
+			POPS(1);
 			int32_t val = POP();
 			PUSHES(1);
 			PUSH(-val);
 			break;
 		}
+		case MOD: {
+			POPS(2);
+			int32_t right = POP();
+			int32_t left = POP();
+			PUSHES(1);
+			PUSH(left % right);
+			break;
+		}
+		//bitwise
+		case BIT_AND: {
+			POPS(2);
+			int32_t right = POP();
+			int32_t left = POP();
+			PUSHES(1);
+			PUSH(left % right);
+			break;
+		}
+		case BIT_OR: {
+			POPS(2);
+			int32_t right = POP();
+			int32_t left = POP();
+			PUSHES(1);
+			PUSH(left | right);
+			break;
+		}
+		case BIT_NEG: {
+			POPS(1);
+			int32_t val = POP();
+			PUSHES(1);
+			PUSH(val);
+			break;
+		}
+		case BIT_XOR: {
+			POPS(2);
+			int32_t right = POP();
+			int32_t left = POP();
+			PUSHES(1);
+			PUSH(left ^ right);
+			break;
+		}
+		//comparative
+		case LT: {
+			POPS(2);
+			int32_t right = POP();
+			int32_t left = POP();
+			PUSHES(1);
+			PUSH(left < right);
+			break;
+		}
+		case LTE: {
+			POPS(2);
+			int32_t right = POP();
+			int32_t left = POP();
+			PUSHES(1);
+			PUSH(left <= right);
+			break;
+		}
+		case GT: {
+			POPS(2);
+			int32_t right = POP();
+			int32_t left = POP();
+			PUSHES(1);
+			PUSH(left > right);
+			break;
+		}
+		case GTE: {
+			POPS(2);
+			int32_t right = POP();
+			int32_t left = POP();
+			PUSHES(1);
+			PUSH(left >= right);
+			break;
+		}
+		case EQ: {
+			POPS(2);
+			int32_t right = POP();
+			int32_t left = POP();
+			PUSHES(1);
+			PUSH(left == right);
+			break;
+		}
+		case NEQ: {
+			POPS(2);
+			int32_t right = POP();
+			int32_t left = POP();
+			PUSHES(1);
+			PUSH(left != right);
+			break;
+		}
+		//boolean
+		case BOOL_AND: {
+			POPS(2);
+			int32_t right = POP();
+			int32_t left = POP();
+			PUSHES(1);
+			PUSH(left && right);
+			break;
+		}
+		case BOOL_OR: {
+			POPS(2);
+			int32_t right = POP();
+			int32_t left = POP();
+			PUSHES(1);
+			PUSH(left || right);
+			break;
+		}
+		case BOOL_NOT: {
+			POPS(1);
+			int32_t val = POP();
+			PUSHES(1);
+			PUSH(!val);
+			break;
+		}		
+		//flow control
 		case JEZ: {
 			if (POP() == 0)
 				code += *code;
@@ -730,41 +1063,10 @@ void vm_exec(const int *code) {
 
 
 
-void lex_test() {
-	init_stream("a1 23  + asdf  +  323  + _23a  sd  + 13");
-	expect_token(TOKEN_NAME);
-	expect_token(TOKEN_INT);
-	expect_token('+');
-	expect_token(TOKEN_NAME);
-	expect_token('+');
-	expect_token(TOKEN_INT);
-	expect_token('+');
-	expect_token(TOKEN_NAME);
-	expect_token(TOKEN_NAME);
-	expect_token('+');
-	expect_token(TOKEN_INT);
-	assert(is_token(TOKEN_EOF));
-}
 
-
-void intern_test() {
-	char* s1 = intern_string("asdf");
-	char* s2 = intern_string("zxcv");
-	char* s3 = intern_string("wert");
-	char* s4 = intern_string("asdf");
-	char* s5 = intern_string("asd");
-	char* s6 = intern_string("asdf!!");
-
-	assert(s4 == s1);
-	assert(s5 != s1);
-	assert(s6 != s1);
-
-}
-
-
+#include "test.c"
 
 char* disassembly;
-
 
 int main(int argc, char **argv) {
 	init_keywords();
@@ -776,8 +1078,30 @@ int main(int argc, char **argv) {
 	if (load_file("C:\\Users\\JoshPC\\projects\\Random_Projects\\stak\\test.stak", &source) < 0) {
 		fatal("Could not load code");
 	}
+
 	compile(source);
 	disassembly = disassemble(code);
 	vm_exec(code);
 	buf_free(disassembly);
 }
+
+
+/*
+{
+print 1 | 2
+print 3 ^ 4
+print 5 && 6
+print 7 || 8
+print 9 % 10
+print 11 ^ 12
+print 13 & 14
+print 15 == 16
+print 17 < 18
+print 19 > 20
+print 21 <= 22
+print 23 >= 24
+print !25
+print -26
+print 27 != 28
+}
+*/
