@@ -294,12 +294,7 @@ bool is_token(TokenKind kind) {
 	return token.kind == kind;
 }
 
-bool is_keyword(char* keyword) {
-	return (token.kind == TOKEN_NAME && token.stringval == keyword);
-}
-
-
-int match_token(TokenKind kind) {
+bool match_token(TokenKind kind) {
 	if (token.kind == kind) {
 		next_token();
 		return true;
@@ -307,6 +302,23 @@ int match_token(TokenKind kind) {
 		return false;
 	}
 }
+
+bool is_keyword(char* keyword) {
+	return (token.kind == TOKEN_NAME && token.stringval == keyword);
+}
+
+bool match_keyword(char*keyword) {
+	if (token.kind == TOKEN_NAME && token.stringval == keyword) {
+		next_token();
+		return true;
+	} else {
+		return false;
+	}
+}
+
+
+#define assert_token(x) (assert(token.kind == (x)));
+#define assert_keyword(kw) (assert(token.kind == TOKEN_NAME && token.stringval == (kw)));
 
 
 
@@ -336,14 +348,17 @@ int lookup_var(char* name) {
 typedef enum OpCode {
 	ADD,
 	SUB,
-	DIV,
 	MUL,
+	DIV,
 	NEG,
 	LIT,
+	JEZ,
+	JMP,
 	LOAD,
 	STORE,
 	PRINT,
-	HALT
+	HALT,
+	NOP,
 } OpCode;
 
 
@@ -442,45 +457,73 @@ void parse_decls() {
 }
 
 
-void parse_statement_assign() {
-	if (is_token(TOKEN_NAME)) {
-		char* varname = token.stringval;
-		next_token();
-		expect_token('=');
-		parse_expr();
-		buf_push(code, STORE);
-		buf_push(code, lookup_var(varname));
-	} else {
-		fatal("expected variable assignment to start with a name");
-	}
+// statements
+
+void parse_stmt();
+
+void parse_stmt_assign() {
+	assert_token(TOKEN_NAME);
+	char* varname = token.stringval;
+	next_token();
+	expect_token('=');
+	parse_expr();
+	buf_push(code, STORE);
+	buf_push(code, lookup_var(varname));
 }
 
 
-void parse_statement_print() {
-	expect_keyword(keyword_print);
+void parse_stmt_print() {
 	parse_expr();
 	buf_push(code, PRINT);
 }
 
 
-void parse_statements() {
-	//TODO: maybe don't assume here that EOF always follows the statements
-	while (!is_token(TOKEN_EOF)) {
-		if (is_keyword(keyword_print)) {
-			parse_statement_print();
-		} else if (is_token(TOKEN_NAME)) {
-			parse_statement_assign();
-		} else {
-			fatal("expected either a print statement or an assignment");
-		}
+void parse_stmt_if() {
+	parse_expr();
+	buf_push(code, JEZ);
+	int else_jmp_patch_index = buf_len(code);
+	buf_push(code, NOP);
+	parse_stmt();
+	if (match_keyword(keyword_else)) {
+		buf_push(code, JMP);
+		int end_jmp_patch_index = buf_len(code);
+		buf_push(code, NOP);
+		code[else_jmp_patch_index] = buf_len(code) - else_jmp_patch_index;
+		parse_stmt();
+		code[end_jmp_patch_index] = buf_len(code) - end_jmp_patch_index;
+	} else {
+		code[else_jmp_patch_index] = buf_len(code) - else_jmp_patch_index;
 	}
-	assert(is_token(TOKEN_EOF));
-	next_token();
 }
 
-void parse_program() {
+
+void parse_stmt_block() {
 	parse_decls();
-	parse_statements();
+	while (!is_token(TOKEN_EOF) && !is_token('}')) {
+		parse_stmt();
+	}
+	expect_token('}');
+}
+
+
+void parse_stmt() {
+	if (match_keyword(keyword_if)) {
+		parse_stmt_if();
+	} else if (match_keyword(keyword_print)) {
+		parse_stmt_print();
+	} else if (is_token(TOKEN_NAME)) {
+		parse_stmt_assign();
+	} else if (match_token('{')) {
+		parse_stmt_block();
+	} else {
+		assert(0);
+	}
+}
+
+
+void parse_program() {
+	parse_stmt();
+	expect_token(TOKEN_EOF);
 }
 
 
@@ -500,80 +543,56 @@ void compile(char* string) {
 
 
 
-int32_t check_runtime_stack_exception(const int *code) {
-	enum { MAX_STACK = 1024 };
-	int32_t top = 0;
-	for (;;) {
-		int32_t op = *code++;
-		switch (op) {
-		case ADD:
-		case SUB:
-		case MUL:
-		case DIV:
-			top--;
-		case LIT:
-			top++;
-			*code++;
-		case HALT:
-			return (top > 0 && top < MAX_STACK);
-		default:
-			printf("vm_exec: illegal opcode");
-			exit(0);
-			return 0;
-		}
-	}
-}
 
-
-
-
-char* disassemble(int* buffer) {
-	static char text[1024 * 4];
-	char* cursor = text;
-	for (OpCode* it = buffer; it < buf_end(buffer); it++) {
+char* disassemble(int* code_buf) {
+	char *output = NULL;
+	for (OpCode* it = code_buf; it < buf_end(code_buf); it++) {
 		switch (*it) {
 		case ADD:
-			cursor += sprintf(cursor, "ADD\n");
+			buf_printf(output, "ADD\n");
 			break;
 		case SUB:
-			cursor += sprintf(cursor, "SUB\n");
+			buf_printf(output, "SUB\n");
 			break;
 		case MUL:
-			cursor += sprintf(cursor, "MUL\n");
+			buf_printf(output, "MUL\n");
 			break;
 		case DIV:
-			cursor += sprintf(cursor, "DIV\n");
+			buf_printf(output, "DIV\n");
 			break;
 		case NEG:
-			cursor += sprintf(cursor, "NEG\n");
+			buf_printf(output, "NEG\n");
+			break;
+		case JEZ:
+			buf_printf(output, "JEZ %d\n", *(++it));
+			break;
+		case JMP:
+			buf_printf(output, "JMP %d\n", *(++it));
 			break;
 		case LIT:
-			cursor += sprintf(cursor, "LIT ");
-			cursor += sprintf(cursor, "%d\n", *(++it));
+			buf_printf(output, "LIT %d\n", *(++it));
 			break;
 		case LOAD:
-			cursor += sprintf(cursor, "LOAD ");
-			cursor += sprintf(cursor, "%d\n", *(++it));
+			buf_printf(output, "LOAD  %d\n", *(++it));
 			break;
 		case STORE:
-			cursor += sprintf(cursor, "STORE ");
-			cursor += sprintf(cursor, "%d\n", *(++it));
+			buf_printf(output, "STORE %d\n", *(++it));
 			break;
 		case PRINT:
-			cursor += sprintf(cursor, "PRINT\n");
+			buf_printf(output, "PRINT\n");
 			break;
 		case HALT:
-			cursor += sprintf(cursor, "HALT\n");
+			buf_printf(output, "HALT\n");
 			break;
-
+		case NOP:
+			buf_printf(output, "NOP\n");
+			break;
 		default:
 			fatal("attempted to disassemble non-esistent opcode %d", *it);
+			break;
 		}
 	}
-	if (cursor != text) {
-		*(cursor - 1) = 0;
-	}
-	return text;
+	return output;
 }
 
 
@@ -639,6 +658,17 @@ void vm_exec(const int *code) {
 			PUSH(-val);
 			break;
 		}
+		case JEZ: {
+			if (POP() == 0)
+				code += *code;
+			else
+				code++;
+			break;
+		}
+		case JMP: {
+			code += *code;
+			break;
+		}
 		case LIT: {
 			PUSHES(1);
 			PUSH(*code++);
@@ -656,11 +686,17 @@ void vm_exec(const int *code) {
 		}
 		case PRINT: {
 			POPS(1);
-			printf("print: %d", POP());
+			printf("%d\n", POP());
 			break;
 		}
 		case HALT: {
 			return;
+			break;
+		}
+
+		case NOP: {
+			//do nothing;
+			break;
 		}
 		default:
 			printf("vm_exec: illegal opcode");
@@ -710,6 +746,9 @@ void intern_test() {
 
 
 
+char* disassembly;
+
+
 int main(int argc, char **argv) {
 	init_keywords();
 
@@ -717,9 +756,11 @@ int main(int argc, char **argv) {
 	lex_test();
 	intern_test();
 	char* source;
-	if (load_file("C:\\Users\\JoshPC\\projects\\Random_Projects\\ion\\TextFile1.txt", &source) < 0) {
+	if (load_file("C:\\Users\\JoshPC\\projects\\Random_Projects\\stak\\TextFile1.txt", &source) < 0) {
 		fatal("Could not load code");
 	}
 	compile(source);
+	disassembly = disassemble(code);
 	vm_exec(code);
+	buf_free(disassembly);
 }
