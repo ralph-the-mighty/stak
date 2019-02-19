@@ -23,9 +23,10 @@ void* buf__grow(const void*, size_t, size_t);
 //#define buf_push(b, x) (buf__fit(b, 1), b[buf_len(b)] = (x), buf__hdr(b)->len++)
 #define buf_push(b, ...) (buf__fit((b), 1), (b)[buf__hdr(b)->len++] = (__VA_ARGS__))
 #define buf_free(b) ((b) ? free(buf__hdr(b)) : 0)
+#define buf_printf(b, ...) ((b) = buf__printf((b), __VA_ARGS__))
+#define buf_clear(b) ((b) ? buf_len(b) = 0 : 0)
 
-
-void *buf__grow(const void * buf, size_t new_len, size_t elem_size) {
+void *buf__grow(const void* buf, size_t new_len, size_t elem_size) {
 	size_t new_cap = MAX(1 + 2 * buf_cap(buf), new_len);
 	assert(new_len <= new_cap);
 	size_t new_size = offsetof(BufHdr, buf) + new_cap * elem_size;
@@ -38,6 +39,23 @@ void *buf__grow(const void * buf, size_t new_len, size_t elem_size) {
 	}
 	new_hdr->cap = new_cap;
 	return new_hdr->buf;
+}
+
+char *buf__printf(char *buf, const char *fmt, ...) {
+	va_list args;
+	va_start(args, fmt);
+	size_t cap = buf_cap(buf) - buf_len(buf);
+	size_t n = 1 + vsnprintf(buf_end(buf), cap, fmt, args);
+	va_end(args);
+	if (n > cap) {
+		buf__fit(buf, n + buf_len(buf));
+		va_start(args, fmt);
+		size_t new_cap = buf_cap(buf) - buf_len(buf);
+		n = 1 + vsnprintf(buf_end(buf), new_cap, fmt, args);
+		va_end(args);
+	}
+	buf__hdr(buf)->len += n - 1;
+	return buf;
 }
 
 
