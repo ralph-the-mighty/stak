@@ -115,6 +115,7 @@ typedef enum TokenKind {
 	TOKEN_RPAREN,
 	TOKEN_LBRACE,
 	TOKEN_RBRACE,
+	TOKEN_COMMA,
 	
 	TOKEN_EOF,
 } TokenKind;
@@ -129,17 +130,24 @@ const char* token_string_map[] = {
 	[TOKEN_DIV] = "/",
 	[TOKEN_MOD] = "%",
 	[TOKEN_NOT] = "!",
+	[TOKEN_AND] = "&",
+	[TOKEN_OR] = "|",
+	[TOKEN_XOR] = "^",
 	[TOKEN_LT] = "<",
 	[TOKEN_GT] = ">",
 	[TOKEN_LTE] = "<=",
 	[TOKEN_GTE] = ">=",
 	[TOKEN_EQ] = "==",
 	[TOKEN_NEQ] = "!=",
+	[TOKEN_OR_OR] = "||",
+	[TOKEN_AND_AND] = "&&",
+	[TOKEN_BIT_NOT] = "~",
 	[TOKEN_ASSIGN] = "=",
 	[TOKEN_LPAREN] = "(",
 	[TOKEN_RPAREN] = ")",
 	[TOKEN_LBRACE] = "{",
 	[TOKEN_RBRACE] = "}",
+	[TOKEN_COMMA] = ",",
 	[TOKEN_EOF] = "EOF",
 };
 
@@ -160,11 +168,6 @@ typedef struct Token {
 
 
 
-
-
-
-
-
 void fatal(char* msg, ...) {
 	va_list args;
 	va_start(args, msg);
@@ -172,6 +175,7 @@ void fatal(char* msg, ...) {
 	char string[256];
 	vsnprintf(string, sizeof(string), msg, args);
 	string[sizeof(string) - 1] = 0;
+	OutputDebugStringA("FATAL: ");
 	OutputDebugStringA(string);
 	OutputDebugStringA("\n");
 	exit(1);
@@ -218,7 +222,7 @@ char* stream;
 // bin: 0b1011011011110001110101
 
 
-int table[256] = {
+int digit_table[256] = {
 	['0'] = 0,
 	['1'] = 1,
 	['2'] = 2,
@@ -255,8 +259,8 @@ int scan_int() {
 		}
 	}
 
-	while (*stream == '0' || table[*stream] != 0) {
-		unsigned char digit = table[*stream];
+	while (*stream == '0' || digit_table[*stream] != 0) {
+		unsigned char digit = digit_table[*stream];
 		if (digit > base) {
 			fatal("malformed integer: expected base %d, but got digit %c", base, *stream);
 		}
@@ -334,6 +338,7 @@ void next_token() {
 	CASE1(')', TOKEN_RPAREN)
 	CASE1('{', TOKEN_LBRACE)
 	CASE1('}', TOKEN_RBRACE)
+	CASE1(',', TOKEN_COMMA)
 			   
 	case 0:
 	{
@@ -406,8 +411,6 @@ bool is_mul_token(TokenKind kind) {
 bool is_cmp_token(TokenKind kind) {
 	return (kind >= TOKEN_FIRST_CMP) && (kind <= TOKEN_LAST_CMP);
 }
-
-
 
 
 
@@ -619,14 +622,20 @@ void parse_expr() {
 }
 
 
-
-void parse_decl() {
-	expect_keyword(keyword_var);
+void parse_var_decl() {
 	if (is_token(TOKEN_NAME)) {
 		new_var(token.stringval);
 		next_token();
 	} else {
-		fatal("name must follow var in delaration");
+		fatal("expected variable name");
+	}
+}
+
+void parse_decl() {
+	expect_keyword(keyword_var);
+	parse_var_decl();
+	while (match_token(TOKEN_COMMA)) {
+		parse_var_decl();
 	}
 }
 
@@ -639,6 +648,21 @@ void parse_decls() {
 
 
 // statements
+int jump_forward(OpCode op) {
+	buf_push(code, op);
+	int index = buf_len(code);
+	buf_push(code, NOP);
+	return index;
+}
+
+void patch_jump_here(int loc) {
+	code[loc] = buf_len(code) - loc;
+}
+
+void jump_back(OpCode op, int loc) {
+	buf_push(code, op);
+	buf_push(code, loc - buf_len(code));
+}
 
 void parse_stmt();
 
@@ -654,15 +678,12 @@ void parse_stmt_assign() {
 
 
 void parse_stmt_while() {
-	int compare_index = buf_len(code);
+	int compare_loc = buf_len(code);
 	parse_expr();
-	buf_push(code, JEZ);
-	int else_jmp_patch_index = buf_len(code);
-	buf_push(code, NOP);
+	int else_jump_loc = jump_forward(JEZ);
 	parse_stmt();
-	buf_push(code, JMP);
-	buf_push(code, compare_index - buf_len(code));
-	code[else_jmp_patch_index] = buf_len(code) - else_jmp_patch_index;
+	jump_back(JMP, compare_loc);
+	patch_jump_here(else_jump_loc);
 }
 
 
@@ -674,19 +695,15 @@ void parse_stmt_print() {
 
 void parse_stmt_if() {
 	parse_expr();
-	buf_push(code, JEZ);
-	int else_jmp_patch_index = buf_len(code);
-	buf_push(code, NOP);
+	int else_jump_loc = jump_forward(JEZ);
 	parse_stmt();
 	if (match_keyword(keyword_else)) {
-		buf_push(code, JMP);
-		int end_jmp_patch_index = buf_len(code);
-		buf_push(code, NOP);
-		code[else_jmp_patch_index] = buf_len(code) - else_jmp_patch_index;
+		int end_jump_loc = jump_forward(JMP);
+		patch_jump_here(else_jump_loc);
 		parse_stmt();
-		code[end_jmp_patch_index] = buf_len(code) - end_jmp_patch_index;
+		patch_jump_here(end_jump_loc);
 	} else {
-		code[else_jmp_patch_index] = buf_len(code) - else_jmp_patch_index;
+		patch_jump_here(else_jump_loc);
 	}
 }
 
@@ -747,47 +764,7 @@ void compile(char* string) {
 					buf_printf(output, #x); \
 					buf_printf(output, " %d\n", *(++it)); \
 					break;
-/*
-		switch (*it) {
-		case ADD:
-			buf_printf(output, "ADD\n");
-			break;
-		case SUB:
-			buf_printf(output, "SUB\n");
-			break;
-		case MUL:
-			buf_printf(output, "MUL\n");
-			break;
-		case DIV:
-			buf_printf(output, "DIV\n");
-			break;
-		case NEG:
-			buf_printf(output, "NEG\n");
-			break;
-		case JEZ:
-			buf_printf(output, "JEZ %d\n", *(++it));
-			break;
-		case JMP:
-			buf_printf(output, "JMP %d\n", *(++it));
-			break;
-		case LIT:
-			buf_printf(output, "LIT %d\n", *(++it));
-			break;
-		case LOAD:
-			buf_printf(output, "LOAD  %d\n", *(++it));
-			break;
-		case STORE:
-			buf_printf(output, "STORE %d\n", *(++it));
-			break;
-		case PRINT:
-			buf_printf(output, "PRINT\n");
-			break;
-		case HALT:
-			buf_printf(output, "HALT\n");
-			break;
-		case NOP:
-			buf_printf(output, "NOP\n");
-			break;*/
+
 
 char* disassemble(int* code_buf) {
 	char *output = NULL;
