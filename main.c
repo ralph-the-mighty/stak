@@ -447,33 +447,33 @@ int lookup_var(char* name) {
 
 
 typedef enum OpCode {
-	ADD,
-	SUB,
-	MUL,
-	DIV,
-	MOD,
-	NEG,
-	LIT,
-	LT,
-	LTE,
-	GT,
-	GTE,
-	EQ,
-	NEQ,
-	BIT_AND,
-	BIT_OR,
-	BIT_NEG,
-	BIT_XOR,
-	BOOL_AND,
-	BOOL_OR,
-	BOOL_NOT,
-	JEZ,
-	JMP,
-	LOAD,
-	STORE,
-	PRINT,
-	HALT,
-	NOP,
+	OP_ADD,
+	OP_SUB,
+	OP_MUL,
+	OP_DIV,
+	OP_MOD,
+	OP_NEG,
+	OP_LIT,
+	OP_LT,
+	OP_LTE,
+	OP_GT,
+	OP_GTE,
+	OP_EQ,
+	OP_NEQ,
+	OP_BIT_AND,
+	OP_BIT_OR,
+	OP_BIT_NEG,
+	OP_BIT_XOR,
+	OP_BOOL_AND,
+	OP_BOOL_OR,
+	OP_BOOL_NOT,
+	OP_JEZ,
+	OP_JMP,
+	OP_LOAD,
+	OP_STORE,
+	OP_PRINT,
+	OP_HALT,
+	OP_NOP,
 } OpCode;
 
 
@@ -488,18 +488,18 @@ void parse_expr(void);
 
 void parse_expr_val() {
 	if (is_token(TOKEN_INT)) {
-		buf_push(code, LIT);
+		buf_push(code, OP_LIT);
 		buf_push(code, token.intval);
 		next_token();
 	} else if (is_token(TOKEN_NAME)) {
 		if (token.stringval == keyword_true) {
-			buf_push(code, LIT);
+			buf_push(code, OP_LIT);
 			buf_push(code, 1);
 		} else if (token.stringval == keyword_false) {
-			buf_push(code, LIT);
+			buf_push(code, OP_LIT);
 			buf_push(code, 0);
 		} else {
-			buf_push(code, LOAD);
+			buf_push(code, OP_LOAD);
 			buf_push(code, lookup_var(token.stringval));
 		}
 		next_token();
@@ -513,10 +513,10 @@ void parse_expr_val() {
 void parse_expr_unary() {
 	if (match_token(TOKEN_MINUS)) {
 		parse_expr_val();
-		buf_push(code, NEG);
+		buf_push(code, OP_NEG);
 	} else if (match_token(TOKEN_NOT)) {
 		parse_expr_val();
-		buf_push(code, BOOL_NOT);
+		buf_push(code, OP_BOOL_NOT);
 	} else {
 		parse_expr_val();
 	}
@@ -532,16 +532,16 @@ void parse_expr_mul() {
 		parse_expr_unary();
 		switch (op) {
 			case TOKEN_MUL:
-				buf_push(code, MUL);
+				buf_push(code, OP_MUL);
 				break;
 			case TOKEN_DIV:
-				buf_push(code, DIV);
+				buf_push(code, OP_DIV);
 				break;
 			case TOKEN_MOD:
-				buf_push(code, MOD);
+				buf_push(code, OP_MOD);
 				break;
 			case TOKEN_AND:
-				buf_push(code, BIT_AND);
+				buf_push(code, OP_BIT_AND);
 				break;
 			default:
 				assert(0);
@@ -560,16 +560,16 @@ void parse_expr_add() {
 		parse_expr_mul();
 		switch (op) {
 		case TOKEN_PLUS:
-			buf_push(code, ADD);
+			buf_push(code, OP_ADD);
 			break;
 		case TOKEN_MINUS:
-			buf_push(code, SUB);
+			buf_push(code, OP_SUB);
 			break;
 		case TOKEN_OR:
-			buf_push(code, BIT_OR);
+			buf_push(code, OP_BIT_OR);
 			break;
 		case TOKEN_XOR:
-			buf_push(code, BIT_XOR);
+			buf_push(code, OP_BIT_XOR);
 			break;
 		default:
 			assert(0);
@@ -586,22 +586,22 @@ void parse_expr_cmp() {
 		parse_expr_add();
 		switch (op) {
 		case TOKEN_LT:
-			buf_push(code, LT);
+			buf_push(code, OP_LT);
 			break;
 		case TOKEN_LTE:
-			buf_push(code, LTE);
+			buf_push(code, OP_LTE);
 			break;
 		case TOKEN_GT:
-			buf_push(code, GT);
+			buf_push(code, OP_GT);
 			break;
 		case TOKEN_GTE:
-			buf_push(code, GTE);
+			buf_push(code, OP_GTE);
 			break;
 		case TOKEN_EQ:
-			buf_push(code, EQ);
+			buf_push(code, OP_EQ);
 			break;
 		case TOKEN_NEQ:
-			buf_push(code, NEQ);
+			buf_push(code, OP_NEQ);
 			break;
 		default:
 			assert(0);
@@ -615,7 +615,7 @@ void parse_expr_and() {
 	parse_expr_cmp();
 	while (match_token(TOKEN_AND_AND)) {
 		parse_expr_cmp();
-		buf_push(code, BOOL_AND);
+		buf_push(code, OP_BOOL_AND);
 	}
 }
 
@@ -623,7 +623,7 @@ void parse_expr_or() {
 	parse_expr_and();
 	while (match_token(TOKEN_OR_OR)) {
 		parse_expr_and();
-		buf_push(code, BOOL_OR);
+		buf_push(code, OP_BOOL_OR);
 	}
 }
 
@@ -662,7 +662,7 @@ void parse_decls() {
 int jump_forward(OpCode op) {
 	buf_push(code, op);
 	int index = buf_len(code);
-	buf_push(code, NOP);
+	buf_push(code, OP_NOP);
 	return index;
 }
 
@@ -683,7 +683,7 @@ void parse_stmt_assign() {
 	next_token();
 	expect_token(TOKEN_ASSIGN);
 	parse_expr();
-	buf_push(code, STORE);
+	buf_push(code, OP_STORE);
 	buf_push(code, lookup_var(varname));
 }
 
@@ -691,25 +691,25 @@ void parse_stmt_assign() {
 void parse_stmt_while() {
 	int compare_loc = buf_len(code);
 	parse_expr();
-	int else_jump_loc = jump_forward(JEZ);
+	int else_jump_loc = jump_forward(OP_JEZ);
 	parse_stmt();
-	jump_back(JMP, compare_loc);
+	jump_back(OP_JMP, compare_loc);
 	patch_jump_here(else_jump_loc);
 }
 
 
 void parse_stmt_print() {
 	parse_expr();
-	buf_push(code, PRINT);
+	buf_push(code, OP_PRINT);
 }
 
 
 void parse_stmt_if() {
 	parse_expr();
-	int else_jump_loc = jump_forward(JEZ);
+	int else_jump_loc = jump_forward(OP_JEZ);
 	parse_stmt();
 	if (match_keyword(keyword_else)) {
-		int end_jump_loc = jump_forward(JMP);
+		int end_jump_loc = jump_forward(OP_JMP);
 		patch_jump_here(else_jump_loc);
 		parse_stmt();
 		patch_jump_here(end_jump_loc);
@@ -761,18 +761,18 @@ void init_stream(char *string) {
 void compile(char* string) {
 	init_stream(string);
 	parse_program();
-	buf_push(code, HALT);
+	buf_push(code, OP_HALT);
 }
 
 
 
 
 #define CASE(x) case x: \
-					buf_printf(output, #x); \
+					buf_printf(output, (#x)+3); \
 					buf_printf(output, "\n"); \
 					break;
 #define CASE_OP(x) case x: \
-					buf_printf(output, #x); \
+					buf_printf(output, (#x)+3); \
 					buf_printf(output, " %d\n", *(++it)); \
 					break;
 
@@ -781,32 +781,32 @@ char* disassemble(int* code_buf) {
 	char *output = NULL;
 	for (OpCode* it = code_buf; it < buf_end(code_buf); it++) {
 		switch (*it) {
-			CASE(ADD)
-			CASE(SUB)
-			CASE(MUL)
-			CASE(DIV)
-			CASE(NEG)
-			CASE(MOD)
-			CASE(BIT_NEG)
-			CASE(BIT_AND)
-			CASE(BIT_OR)
-			CASE(BIT_XOR)
-			CASE(BOOL_NOT)
-			CASE(BOOL_OR)
-			CASE(BOOL_AND)
-			CASE(LT)
-			CASE(LTE)
-			CASE(GT)
-			CASE(GTE)
-			CASE(EQ)
-			CASE(NEQ)
-			CASE_OP(JEZ)
-			CASE_OP(JMP)
-			CASE_OP(LIT)
-			CASE_OP(LOAD)
-			CASE_OP(STORE)
-			CASE(PRINT)
-			CASE(HALT)
+			CASE(OP_ADD)
+			CASE(OP_SUB)
+			CASE(OP_MUL)
+			CASE(OP_DIV)
+			CASE(OP_NEG)
+			CASE(OP_MOD)
+			CASE(OP_BIT_NEG)
+			CASE(OP_BIT_AND)
+			CASE(OP_BIT_OR)
+			CASE(OP_BIT_XOR)
+			CASE(OP_BOOL_NOT)
+			CASE(OP_BOOL_OR)
+			CASE(OP_BOOL_AND)
+			CASE(OP_LT)
+			CASE(OP_LTE)
+			CASE(OP_GT)
+			CASE(OP_GTE)
+			CASE(OP_EQ)
+			CASE(OP_NEQ)
+			CASE_OP(OP_JEZ)
+			CASE_OP(OP_JMP)
+			CASE_OP(OP_LIT)
+			CASE_OP(OP_LOAD)
+			CASE_OP(OP_STORE)
+			CASE(OP_PRINT)
+			CASE(OP_HALT)
 
 		default:
 			fatal("attempted to disassemble non-esistent opcode %d", *it);
@@ -843,7 +843,7 @@ void vm_exec(const int *code) {
 		int32_t op = *code++;
 		switch (op) {
 		//arithmetic
-		case ADD: {
+		case OP_ADD: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -851,7 +851,7 @@ void vm_exec(const int *code) {
 			PUSH(left + right);
 			break;
 		}
-		case SUB: {
+		case OP_SUB: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -859,7 +859,7 @@ void vm_exec(const int *code) {
 			PUSH(left - right);
 			break;
 		}
-		case MUL: {
+		case OP_MUL: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -867,7 +867,7 @@ void vm_exec(const int *code) {
 			PUSH(left * right);
 			break;
 		}
-		case DIV: {
+		case OP_DIV: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -875,14 +875,14 @@ void vm_exec(const int *code) {
 			PUSH(left / right);
 			break;
 		}
-		case NEG: {
+		case OP_NEG: {
 			POPS(1);
 			int32_t val = POP();
 			PUSHES(1);
 			PUSH(-val);
 			break;
 		}
-		case MOD: {
+		case OP_MOD: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -891,7 +891,7 @@ void vm_exec(const int *code) {
 			break;
 		}
 		//bitwise
-		case BIT_AND: {
+		case OP_BIT_AND: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -899,7 +899,7 @@ void vm_exec(const int *code) {
 			PUSH(left % right);
 			break;
 		}
-		case BIT_OR: {
+		case OP_BIT_OR: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -907,14 +907,14 @@ void vm_exec(const int *code) {
 			PUSH(left | right);
 			break;
 		}
-		case BIT_NEG: {
+		case OP_BIT_NEG: {
 			POPS(1);
 			int32_t val = POP();
 			PUSHES(1);
 			PUSH(val);
 			break;
 		}
-		case BIT_XOR: {
+		case OP_BIT_XOR: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -923,7 +923,7 @@ void vm_exec(const int *code) {
 			break;
 		}
 		//comparative
-		case LT: {
+		case OP_LT: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -931,7 +931,7 @@ void vm_exec(const int *code) {
 			PUSH(left < right);
 			break;
 		}
-		case LTE: {
+		case OP_LTE: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -939,7 +939,7 @@ void vm_exec(const int *code) {
 			PUSH(left <= right);
 			break;
 		}
-		case GT: {
+		case OP_GT: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -947,7 +947,7 @@ void vm_exec(const int *code) {
 			PUSH(left > right);
 			break;
 		}
-		case GTE: {
+		case OP_GTE: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -955,7 +955,7 @@ void vm_exec(const int *code) {
 			PUSH(left >= right);
 			break;
 		}
-		case EQ: {
+		case OP_EQ: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -963,7 +963,7 @@ void vm_exec(const int *code) {
 			PUSH(left == right);
 			break;
 		}
-		case NEQ: {
+		case OP_NEQ: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -972,7 +972,7 @@ void vm_exec(const int *code) {
 			break;
 		}
 		//boolean
-		case BOOL_AND: {
+		case OP_BOOL_AND: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -980,7 +980,7 @@ void vm_exec(const int *code) {
 			PUSH(left && right);
 			break;
 		}
-		case BOOL_OR: {
+		case OP_BOOL_OR: {
 			POPS(2);
 			int32_t right = POP();
 			int32_t left = POP();
@@ -988,7 +988,7 @@ void vm_exec(const int *code) {
 			PUSH(left || right);
 			break;
 		}
-		case BOOL_NOT: {
+		case OP_BOOL_NOT: {
 			POPS(1);
 			int32_t val = POP();
 			PUSHES(1);
@@ -996,43 +996,42 @@ void vm_exec(const int *code) {
 			break;
 		}		
 		//flow control
-		case JEZ: {
+		case OP_JEZ: {
 			if (POP() == 0)
 				code += *code;
 			else
 				code++;
 			break;
 		}
-		case JMP: {
+		case OP_JMP: {
 			code += *code;
 			break;
 		}
-		case LIT: {
+		case OP_LIT: {
 			PUSHES(1);
 			PUSH(*code++);
 			break;
 		}
-		case LOAD: {
+		case OP_LOAD: {
 			PUSHES(1);
 			PUSH(store[*code++]);
 			break;
 		}
-		case STORE: {
+		case OP_STORE: {
 			POPS(1);
 			store[*code++] = POP();
 			break;
 		}
-		case PRINT: {
+		case OP_PRINT: {
 			POPS(1);
 			printf("%d\n", POP());
 			break;
 		}
-		case HALT: {
+		case OP_HALT: {
 			return;
 			break;
 		}
-
-		case NOP: {
+		case OP_NOP: {
 			//do nothing;
 			break;
 		}
@@ -1056,6 +1055,7 @@ void vm_exec(const int *code) {
 
 char* disassembly;
 
+
 int main(int argc, char **argv) {
 	init_keywords();
 
@@ -1072,24 +1072,3 @@ int main(int argc, char **argv) {
  	vm_exec(code);
 	buf_free(disassembly);
 }
-
-
-/*
-{
-print 1 | 2
-print 3 ^ 4
-print 5 && 6
-print 7 || 8
-print 9 % 10
-print 11 ^ 12
-print 13 & 14
-print 15 == 16
-print 17 < 18
-print 19 > 20
-print 21 <= 22
-print 23 >= 24
-print !25
-print -26
-print 27 != 28
-}
-*/
