@@ -60,6 +60,8 @@ char *keyword_if;
 char *keyword_else;
 char *keyword_print;
 char *keyword_while;
+char *keyword_true;
+char *keyword_false;
 
 void init_keywords() {
 #define KEYWORD(s) keyword_##s = intern_string(#s)
@@ -68,6 +70,8 @@ void init_keywords() {
 	KEYWORD(else);
 	KEYWORD(print);
 	KEYWORD(while);
+	KEYWORD(true);
+	KEYWORD(false);
 #undef KEYWORD
 }
 
@@ -482,17 +486,24 @@ int32_t *code;
 void parse_expr(void);
 
 
-void parse_expr4() {
+void parse_expr_val() {
 	if (is_token(TOKEN_INT)) {
 		buf_push(code, LIT);
 		buf_push(code, token.intval);
 		next_token();
 	} else if (is_token(TOKEN_NAME)) {
-		buf_push(code, LOAD);
-		buf_push(code, lookup_var(token.stringval));
+		if (token.stringval == keyword_true) {
+			buf_push(code, LIT);
+			buf_push(code, 1);
+		} else if (token.stringval == keyword_false) {
+			buf_push(code, LIT);
+			buf_push(code, 0);
+		} else {
+			buf_push(code, LOAD);
+			buf_push(code, lookup_var(token.stringval));
+		}
 		next_token();
-	} else if (is_token(TOKEN_LPAREN)) {
-		next_token();
+	} else if (match_token(TOKEN_LPAREN)) {
 		parse_expr();
 		expect_token(TOKEN_RPAREN);
 	}
@@ -501,13 +512,13 @@ void parse_expr4() {
 
 void parse_expr_unary() {
 	if (match_token(TOKEN_MINUS)) {
-		parse_expr4();
+		parse_expr_val();
 		buf_push(code, NEG);
 	} else if (match_token(TOKEN_NOT)) {
-		parse_expr4();
+		parse_expr_val();
 		buf_push(code, BOOL_NOT);
 	} else {
-		parse_expr4();
+		parse_expr_val();
 	}
 }
 
@@ -1058,7 +1069,7 @@ int main(int argc, char **argv) {
 
 	compile(source);
 	disassembly = disassemble(code);
-	vm_exec(code);
+ 	vm_exec(code);
 	buf_free(disassembly);
 }
 
