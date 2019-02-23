@@ -289,9 +289,23 @@ int scan_int() {
 
 
 void next_token() {
-
+	restart:
+	//skip whitespace
 	while (isspace(*stream)) {
 		stream++;
+	}
+
+
+	//skip comments
+	if (*stream == '/' && *(stream + 1) == '*') {
+		stream += 2;
+		for (;;) {
+			if (*stream == '*' && *(stream + 1) == '/') {
+				stream += 2;
+				goto restart;
+			}
+			stream++;
+		}
 	}
 
 	switch (*stream) {
@@ -486,6 +500,15 @@ int32_t *code;
 void parse_expr(void);
 
 
+
+void parse_params() {
+	parse_expr();
+	while (match_token(TOKEN_COMMA)) {
+		parse_expr();
+	}
+}
+
+
 void parse_expr_val() {
 	if (is_token(TOKEN_INT)) {
 		buf_push(code, OP_LIT);
@@ -495,14 +518,23 @@ void parse_expr_val() {
 		if (token.stringval == keyword_true) {
 			buf_push(code, OP_LIT);
 			buf_push(code, 1);
+			next_token();
 		} else if (token.stringval == keyword_false) {
 			buf_push(code, OP_LIT);
 			buf_push(code, 0);
+			next_token();
 		} else {
-			buf_push(code, OP_LOAD);
-			buf_push(code, lookup_var(token.stringval));
+			//check to see if name is variable or function call
+			char* name = token.stringval;
+			next_token();
+			if (match_token(TOKEN_LPAREN)) {
+				parse_params();
+				expect_token(TOKEN_RPAREN);
+			} else {
+				buf_push(code, OP_LOAD);
+				buf_push(code, lookup_var(name));
+			}
 		}
-		next_token();
 	} else if (match_token(TOKEN_LPAREN)) {
 		parse_expr();
 		expect_token(TOKEN_RPAREN);
@@ -658,7 +690,7 @@ void parse_decls() {
 }
 
 
-// statements
+
 int jump_forward(OpCode op) {
 	buf_push(code, op);
 	int index = buf_len(code);
@@ -675,6 +707,13 @@ void jump_back(OpCode op, int loc) {
 	buf_push(code, loc - buf_len(code));
 }
 
+
+
+
+
+
+
+// statements
 void parse_stmt();
 
 void parse_stmt_assign() {

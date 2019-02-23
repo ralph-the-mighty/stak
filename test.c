@@ -16,7 +16,7 @@ void buf_test() {
 
 
 void lex_test() {
-	init_stream("a1 23  ++= asdf  !=+==!/  323  + _23a  sd  + 13");
+	init_stream("a1 23  ++= asdf  !=+==!/ /*asdf+2342*/  323  + _23a  sd  + 13");
 	expect_token(TOKEN_NAME);
 	expect_token(TOKEN_INT);
 	expect_token(TOKEN_PLUS);
