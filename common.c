@@ -84,3 +84,36 @@ int load_file(const char *filename, char **result)
 	(*result)[size] = 0;
 	return size;
 }
+
+
+
+
+typedef struct InternedString {
+	char* string;
+	size_t length;
+} InternedString;
+
+InternedString *interned_strings = NULL;
+
+
+
+char* intern_string_range(char* start, char* one_past_end) {
+	size_t size = one_past_end - start;
+	for (InternedString *it = interned_strings; it != buf_end(interned_strings); it++) {
+		if (it->length == size && strncmp(start, it->string, size) == 0) {
+			return it->string;
+		}
+	}
+
+	char* new_string = (char *)malloc(size + 1);
+	strncpy(new_string, start, size);
+	new_string[size] = 0;
+	InternedString new_istring = { new_string, size };
+	buf_push(interned_strings, new_istring);
+	return new_string;
+}
+
+
+char* intern_string(char *string) {
+	return intern_string_range(string, string + strlen(string));
+}

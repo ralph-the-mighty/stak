@@ -22,35 +22,6 @@
 
 
 
-typedef struct InternedString {
-	char* string;
-	size_t length;
-} InternedString;
-
-InternedString *interned_strings = NULL;
-
-
-
-char* intern_string_range(char* start, char* one_past_end) {
-	size_t size = one_past_end - start;
-	for (InternedString *it = interned_strings; it != buf_end(interned_strings); it++) {
-		if (it->length == size && strncmp(start, it->string, size) == 0) {
-			return it->string;
-		}
-	}
-
-	char* new_string = (char *)malloc(size + 1);
-	strncpy(new_string, start, size);
-	new_string[size] = 0;
-	InternedString new_istring = { new_string, size };
-	buf_push(interned_strings, new_istring);
-	return new_string;
-}
-
-
-char* intern_string(char *string) {
-	return intern_string_range(string, string + strlen(string));
-}
 
 
 
@@ -62,17 +33,39 @@ char *keyword_print;
 char *keyword_while;
 char *keyword_true;
 char *keyword_false;
+char *keyword_return;
+char *keyword_func;
 
-void init_keywords() {
+char *first_keyword;
+char *last_keyword;
+
+char *name_main;
+
+
+void init_keywords_and_names() {
 #define KEYWORD(s) keyword_##s = intern_string(#s)
 	KEYWORD(var);
+	first_keyword = keyword_var;
 	KEYWORD(if);
 	KEYWORD(else);
 	KEYWORD(print);
 	KEYWORD(while);
 	KEYWORD(true);
 	KEYWORD(false);
+	KEYWORD(return);
+	KEYWORD(func);
+	last_keyword = keyword_func;
 #undef KEYWORD
+
+#define NAME(s) name_##s = intern_string(#s)
+	NAME(main);
+#undef NAME
+}
+
+bool is_keyword_name() {
+	//FILL ME IN
+	assert(0);
+	return false;
 }
 
 typedef enum TokenKind {
@@ -221,8 +214,8 @@ char* stream;
 
 // 0xdeadbeef01231
 //
-// dec: 0b1231412
-// hex: 0xdeadbeef, 0123456789ABCDEF
+// dec: 1231412
+// hex: 0xdeadbeef, 0x0123456789ABCDEF
 // bin: 0b1011011011110001110101
 
 
@@ -376,88 +369,10 @@ void next_token() {
 
 
 
-void expect_token(TokenKind kind) {
-	if (token.kind == kind) {
-		next_token();
-	} else {
-		fatal("expected %s, got %s", token_kind_str(kind), token_kind_str(token.kind));
-	}
-}
-
-void expect_keyword(char* keyword) {
-	if (!(token.kind == TOKEN_NAME && token.stringval == keyword)) {
-		fatal("expected keyword %s but got %s", keyword, token_kind_str(token.kind));
-	} else {
-		next_token();
-	}
-}
-
-bool is_token(TokenKind kind) {
-	return token.kind == kind;
-}
-
-bool match_token(TokenKind kind) {
-	if (token.kind == kind) {
-		next_token();
-		return true;
-	} else {
-		return false;
-	}
-}
-
-bool is_keyword(char* keyword) {
-	return (token.kind == TOKEN_NAME && token.stringval == keyword);
-}
-
-bool match_keyword(char*keyword) {
-	if (token.kind == TOKEN_NAME && token.stringval == keyword) {
-		next_token();
-		return true;
-	} else {
-		return false;
-	}
-}
-
-bool is_add_token(TokenKind kind) {
-	return (kind >= TOKEN_FIRST_ADD) && (kind <= TOKEN_LAST_ADD);
-}
-
-bool is_mul_token(TokenKind kind) {
-	return (kind >= TOKEN_FIRST_MUL) && (kind <= TOKEN_LAST_MUL);
-}
-
-bool is_cmp_token(TokenKind kind) {
-	return (kind >= TOKEN_FIRST_CMP) && (kind <= TOKEN_LAST_CMP);
-}
 
 
 
-#define assert_token(x) (assert(token.kind == (x)));
-#define assert_keyword(kw) (assert(token.kind == TOKEN_NAME && token.stringval == (kw)));
 
-
-
-char** sym_table;
-
-
-void new_var(char* name) {
-	for (char * it = sym_table; it <= buf_end(sym_table); it++) {
-		if (name == it) {
-			fatal("var %s already declared", name);
-		}
-	}
-	buf_push(sym_table, name);
-}
-
-
-int lookup_var(char* name) {
-	for (int i = 0; i < buf_len(sym_table); i++) {
-		if (name == sym_table[i]) {
-			return i;
-		}
-	}
-	fatal("var %s not declared", name);
-}
 
 
 typedef enum OpCode {
@@ -488,6 +403,14 @@ typedef enum OpCode {
 	OP_PRINT,
 	OP_HALT,
 	OP_NOP,
+
+	//function stuff
+	OP_RETURN,
+	OP_ALLOC,
+	OP_CLEAR,
+	OP_CALL,
+	OP_LOCAL,
+	OP_ARG,
 } OpCode;
 
 
@@ -495,8 +418,149 @@ typedef enum OpCode {
 
 int32_t *code;
 
+void emit(OpCode op) {
+	buf_push(code, op);
+}
 
 
+
+char** local_sym_table;
+
+
+void new_sym(char* name) {
+	for (char * it = local_sym_table; it <= buf_end(local_sym_table); it++) {
+		if (name == it) {
+			fatal("var %s already declared", name);
+		}
+	}
+	buf_push(local_sym_table, name);
+}
+
+
+int lookup_sym(char* name) {
+	for (int i = 0; i < buf_len(local_sym_table); i++) {
+		if (name == local_sym_table[i]) {
+			return i;
+		}
+	}
+	fatal("var %s not declared", name);
+}
+
+
+
+
+
+//functions
+
+typedef struct Func {
+	char *name;
+	size_t num_params;
+	size_t num_locals;
+	size_t loc;
+} Func;
+
+Func *funcs;
+
+Func new_func_here(char* name) {
+	for (Func* it = funcs; it < buf_end(funcs); it++) {
+		if (it->name == name) {
+			fatal("func %s already defined", name);
+		}
+	}
+	Func func;
+	func.name = name;
+	func.loc = buf_len(code);
+	func.num_params = 0;
+	func.num_locals = 0;
+	buf_push(funcs, func);
+	return func;
+}
+
+
+Func* lookup_func(char *name) {
+	for (Func* it = funcs; it < buf_end(funcs); it++) {
+		if (it->name == name) {
+			return it;
+		}
+	}
+	return NULL;
+}
+
+
+
+
+void expect_token(TokenKind kind) {
+	if (token.kind == kind) {
+		next_token();
+	} else {
+		fatal("expected %s, got %s", token_kind_str(kind), token_kind_str(token.kind));
+	}
+}
+
+void expect_keyword(char* keyword) {
+	if (!(token.kind == TOKEN_NAME && token.stringval == keyword)) {
+		fatal("expected keyword %s but got %s", keyword, token_kind_str(token.kind));
+	} else {
+		next_token();
+	}
+}
+
+bool is_token(TokenKind kind) {
+	return token.kind == kind;
+}
+
+bool match_token(TokenKind kind) {
+	if (token.kind == kind) {
+		next_token();
+		return true;
+	} else {
+		return false;
+	}
+}
+
+
+bool is_keyword(char* keyword) {
+	return (token.kind == TOKEN_NAME && token.stringval == keyword);
+}
+
+bool match_keyword(char*keyword) {
+	if (token.kind == TOKEN_NAME && token.stringval == keyword) {
+		next_token();
+		return true;
+	} else {
+		return false;
+	}
+}
+
+bool is_add_token(TokenKind kind) {
+	return (kind >= TOKEN_FIRST_ADD) && (kind <= TOKEN_LAST_ADD);
+}
+
+bool is_mul_token(TokenKind kind) {
+	return (kind >= TOKEN_FIRST_MUL) && (kind <= TOKEN_LAST_MUL);
+}
+
+bool is_cmp_token(TokenKind kind) {
+	return (kind >= TOKEN_FIRST_CMP) && (kind <= TOKEN_LAST_CMP);
+}
+
+TokenKind lookahead() {
+	Token t = token;
+	char* bookmark = stream;
+	next_token();
+	TokenKind kind = token.kind;
+	token = t;
+	stream = bookmark;
+	return kind;
+}
+
+
+
+#define assert_token(x) (assert(token.kind == (x)));
+#define assert_keyword(kw) (assert(token.kind == TOKEN_NAME && token.stringval == (kw)));
+
+
+//parsing
 void parse_expr(void);
 
 
@@ -511,28 +575,35 @@ void parse_params() {
 
 void parse_expr_val() {
 	if (is_token(TOKEN_INT)) {
-		buf_push(code, OP_LIT);
-		buf_push(code, token.intval);
+		emit(OP_LIT);
+		emit(token.intval);
 		next_token();
 	} else if (is_token(TOKEN_NAME)) {
 		if (token.stringval == keyword_true) {
-			buf_push(code, OP_LIT);
-			buf_push(code, 1);
+			emit(OP_LIT);
+			emit(1);
 			next_token();
 		} else if (token.stringval == keyword_false) {
-			buf_push(code, OP_LIT);
-			buf_push(code, 0);
+			emit(OP_LIT);
+			emit(0);
 			next_token();
 		} else {
 			//check to see if name is variable or function call
 			char* name = token.stringval;
 			next_token();
 			if (match_token(TOKEN_LPAREN)) {
-				parse_params();
+				//TODO: functions with parameters
+				//parse_params();
 				expect_token(TOKEN_RPAREN);
+				Func* func = lookup_func(name);
+				if (!func) {
+					fatal("cannot call function %s;  function has not been declared.", name);
+				}
+				emit(OP_CALL);
+				emit(func->loc);
 			} else {
-				buf_push(code, OP_LOAD);
-				buf_push(code, lookup_var(name));
+				emit(OP_LOAD);
+				emit(lookup_sym(name));
 			}
 		}
 	} else if (match_token(TOKEN_LPAREN)) {
@@ -545,10 +616,10 @@ void parse_expr_val() {
 void parse_expr_unary() {
 	if (match_token(TOKEN_MINUS)) {
 		parse_expr_val();
-		buf_push(code, OP_NEG);
+		emit(OP_NEG);
 	} else if (match_token(TOKEN_NOT)) {
 		parse_expr_val();
-		buf_push(code, OP_BOOL_NOT);
+		emit(OP_BOOL_NOT);
 	} else {
 		parse_expr_val();
 	}
@@ -563,21 +634,21 @@ void parse_expr_mul() {
 		next_token();
 		parse_expr_unary();
 		switch (op) {
-			case TOKEN_MUL:
-				buf_push(code, OP_MUL);
-				break;
-			case TOKEN_DIV:
-				buf_push(code, OP_DIV);
-				break;
-			case TOKEN_MOD:
-				buf_push(code, OP_MOD);
-				break;
-			case TOKEN_AND:
-				buf_push(code, OP_BIT_AND);
-				break;
-			default:
-				assert(0);
-				break;
+		case TOKEN_MUL:
+			emit(OP_MUL);
+			break;
+		case TOKEN_DIV:
+			emit(OP_DIV);
+			break;
+		case TOKEN_MOD:
+			emit(OP_MOD);
+			break;
+		case TOKEN_AND:
+			emit(OP_BIT_AND);
+			break;
+		default:
+			assert(0);
+			break;
 		}
 	}
 }
@@ -592,16 +663,16 @@ void parse_expr_add() {
 		parse_expr_mul();
 		switch (op) {
 		case TOKEN_PLUS:
-			buf_push(code, OP_ADD);
+			emit(OP_ADD);
 			break;
 		case TOKEN_MINUS:
-			buf_push(code, OP_SUB);
+			emit(OP_SUB);
 			break;
 		case TOKEN_OR:
-			buf_push(code, OP_BIT_OR);
+			emit(OP_BIT_OR);
 			break;
 		case TOKEN_XOR:
-			buf_push(code, OP_BIT_XOR);
+			emit(OP_BIT_XOR);
 			break;
 		default:
 			assert(0);
@@ -618,22 +689,22 @@ void parse_expr_cmp() {
 		parse_expr_add();
 		switch (op) {
 		case TOKEN_LT:
-			buf_push(code, OP_LT);
+			emit(OP_LT);
 			break;
 		case TOKEN_LTE:
-			buf_push(code, OP_LTE);
+			emit(OP_LTE);
 			break;
 		case TOKEN_GT:
-			buf_push(code, OP_GT);
+			emit(OP_GT);
 			break;
 		case TOKEN_GTE:
-			buf_push(code, OP_GTE);
+			emit(OP_GTE);
 			break;
 		case TOKEN_EQ:
-			buf_push(code, OP_EQ);
+			emit(OP_EQ);
 			break;
 		case TOKEN_NEQ:
-			buf_push(code, OP_NEQ);
+			emit(OP_NEQ);
 			break;
 		default:
 			assert(0);
@@ -647,7 +718,7 @@ void parse_expr_and() {
 	parse_expr_cmp();
 	while (match_token(TOKEN_AND_AND)) {
 		parse_expr_cmp();
-		buf_push(code, OP_BOOL_AND);
+		emit(OP_BOOL_AND);
 	}
 }
 
@@ -655,7 +726,7 @@ void parse_expr_or() {
 	parse_expr_and();
 	while (match_token(TOKEN_OR_OR)) {
 		parse_expr_and();
-		buf_push(code, OP_BOOL_OR);
+		emit(OP_BOOL_OR);
 	}
 }
 
@@ -667,7 +738,7 @@ void parse_expr() {
 
 void parse_var_decl() {
 	if (is_token(TOKEN_NAME)) {
-		new_var(token.stringval);
+		new_sym(token.stringval);
 		next_token();
 	} else {
 		fatal("expected variable name");
@@ -683,7 +754,7 @@ void parse_decl() {
 }
 
 
-void parse_decls() {
+void parse_local_decls() {
 	while (is_keyword(keyword_var)) {
 		parse_decl();
 	}
@@ -692,9 +763,9 @@ void parse_decls() {
 
 
 int jump_forward(OpCode op) {
-	buf_push(code, op);
+	emit(op);
 	int index = buf_len(code);
-	buf_push(code, OP_NOP);
+	emit(OP_NOP);
 	return index;
 }
 
@@ -703,12 +774,9 @@ void patch_jump_here(int loc) {
 }
 
 void jump_back(OpCode op, int loc) {
-	buf_push(code, op);
-	buf_push(code, loc - buf_len(code));
+	emit(op);
+	emit(loc - buf_len(code));
 }
-
-
-
 
 
 
@@ -722,8 +790,8 @@ void parse_stmt_assign() {
 	next_token();
 	expect_token(TOKEN_ASSIGN);
 	parse_expr();
-	buf_push(code, OP_STORE);
-	buf_push(code, lookup_var(varname));
+	emit(OP_STORE);
+	emit(lookup_sym(varname));
 }
 
 
@@ -739,7 +807,7 @@ void parse_stmt_while() {
 
 void parse_stmt_print() {
 	parse_expr();
-	buf_push(code, OP_PRINT);
+	emit(OP_PRINT);
 }
 
 
@@ -759,7 +827,7 @@ void parse_stmt_if() {
 
 
 void parse_stmt_block() {
-	parse_decls();
+	parse_local_decls();
 	while (!is_token(TOKEN_EOF) && !is_token(TOKEN_RBRACE)) {
 		parse_stmt();
 	}
@@ -774,19 +842,52 @@ void parse_stmt() {
 		parse_stmt_print();
 	} else if (match_keyword(keyword_while)) {
 		parse_stmt_while();
-	} else if (is_token(TOKEN_NAME)) {
-		parse_stmt_assign();
 	} else if (match_token(TOKEN_LBRACE)) {
 		parse_stmt_block();
 	} else {
-		assert(0);
+		assert_token(TOKEN_NAME);
+		if (lookahead() == TOKEN_ASSIGN) {
+			parse_stmt_assign();
+		} else {
+			parse_expr();
+		}
+	}
+}
+
+
+void parse_func_decl() {
+	assert_token(TOKEN_NAME);
+	char* name = token.stringval;
+	next_token();
+	new_func_here(name);
+	expect_token(TOKEN_LPAREN);
+	expect_token(TOKEN_RPAREN);
+	parse_stmt();
+	emit(OP_RETURN);
+}
+
+
+
+void parse_decls() {
+	while (match_keyword(keyword_func)) {
+		parse_func_decl();
 	}
 }
 
 
 void parse_program() {
-	parse_stmt();
+	emit(OP_CALL);
+	int main_call_loc = buf_len(code);
+	emit(OP_NOP);
+	emit(OP_HALT);
+	parse_decls();
 	expect_token(TOKEN_EOF);
+
+	Func* func_main = lookup_func(name_main);
+	if (!func_main) {
+		fatal("cannot compile program without main func defined");
+	}
+	code[main_call_loc] = func_main->loc;
 }
 
 
@@ -800,7 +901,6 @@ void init_stream(char *string) {
 void compile(char* string) {
 	init_stream(string);
 	parse_program();
-	buf_push(code, OP_HALT);
 }
 
 
@@ -847,6 +947,13 @@ char* disassemble(int* code_buf) {
 			CASE(OP_PRINT)
 			CASE(OP_HALT)
 
+			CASE(OP_RETURN)
+			CASE_OP(OP_ALLOC)
+			CASE_OP(OP_CLEAR)
+			CASE_OP(OP_CALL)
+			CASE_OP(OP_LOCAL)
+			CASE_OP(OP_ARG)
+
 		default:
 			fatal("attempted to disassemble non-esistent opcode %d", *it);
 			break;
@@ -860,7 +967,7 @@ char* disassemble(int* code_buf) {
 
 
 
-void vm_exec(const int *code) {
+void vm_exec(const int *code_buffer) {
 
 #define POP() \
     (*--top)
@@ -877,6 +984,7 @@ void vm_exec(const int *code) {
 	enum { MAX_VARS = 1024 };
 	int32_t store[MAX_STACK];
 
+	int32_t *code = code_buffer;
 	int32_t *top = stack;
 	for (;;) {
 		int32_t op = *code++;
@@ -1074,6 +1182,35 @@ void vm_exec(const int *code) {
 			//do nothing;
 			break;
 		}
+
+		//function stuff
+		case OP_RETURN: {
+			POPS(1);
+			code = POP() + code_buffer;
+			break;
+		}
+		case OP_ALLOC: {
+			assert(0);
+			break;
+		}
+		case OP_CLEAR: {
+			assert(0);
+			break;
+		}
+		case OP_CALL: {
+			PUSHES(1);
+			PUSH(code - code_buffer + 1);		//return address
+			code = *code + code_buffer;
+			break;
+		}
+		case OP_LOCAL: {
+			assert(0);
+			break;
+		}
+		case OP_ARG: {
+			assert(0);
+			break;
+		}
 		default:
 			printf("vm_exec: illegal opcode");
 			exit(0);
@@ -1088,15 +1225,13 @@ void vm_exec(const int *code) {
 }
 
 
-
-
 #include "test.c"
 
 char* disassembly;
 
 
 int main(int argc, char **argv) {
-	init_keywords();
+	init_keywords_and_names();
 
 	buf_test();
 	lex_test();
